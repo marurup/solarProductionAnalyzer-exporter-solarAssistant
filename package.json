@@ -1,0 +1,13 @@
+{
+  "name": "solarproductionanalyzer-exporter-solarassistant",
+  "version": "0.1.0",
+  "description": "SolarAssistant backup → energiflow-CSV v1 (time for time sol, forbrug, batteri og net) til solarProductionAnalyzer",
+  "type": "module",
+  "private": true,
+  "bin": { "sa-energiflow": "cli.mjs" },
+  "scripts": {
+    "test": "node test/check.mjs",
+    "serve": "python -m http.server 8081"
+  },
+  "engines": { "node": ">=18" }
+}

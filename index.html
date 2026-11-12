@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="da">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SolarAssistant → energiflow</title>
+  <meta name="description" content="Lav en energiflow-CSV (time for time sol, forbrug, batteri og net) ud fra en SolarAssistant-backup. Alt sker lokalt i din browser.">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0f1117; --surface: #1a1d27; --border: #2a2d3a;
+      --text: #e2e4ed; --muted: #8b90a0; --accent: #f59e0b;
+      --green: #22c55e; --red: #ef4444; --blue: #3b82f6;
+    }
+    body {
+      background: var(--bg); color: var(--text);
+      font-family: 'Inter', system-ui, sans-serif; font-size: 15px; line-height: 1.55;
+      padding: 24px 16px; max-width: 900px; margin: 0 auto;
+    }
+    h1 { font-size: 1.5rem; font-weight: 700; margin-bottom: 4px; }
+    h2 { font-size: 1.05rem; font-weight: 600; margin-bottom: 12px; color: var(--accent); }
+    p, li { color: var(--muted); font-size: 0.9rem; }
+    p + p { margin-top: 8px; }
+    a { color: var(--accent); }
+    code { font-family: ui-monospace, monospace; font-size: 0.85em; background: var(--bg); padding: 1px 5px; border-radius: 4px; color: var(--text); }
+    .subtitle { color: var(--muted); margin-bottom: 24px; }
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 20px 22px; margin-bottom: 18px; }
+    ol { padding-left: 22px; }
+    ol li { margin-bottom: 4px; }
+    ol li b, p b { color: var(--text); font-weight: 600; }
+    .privacy { border-left: 3px solid var(--green); padding: 8px 12px; background: rgba(34,197,94,0.06); border-radius: 0 6px 6px 0; margin-top: 12px; }
+
+    .drop-zone {
+      border: 2px dashed var(--border); border-radius: 8px; padding: 32px 16px;
+      text-align: center; cursor: pointer; transition: border-color .2s, background .2s;
+    }
+    .drop-zone:hover, .drop-zone.drag-over, .drop-zone:focus-visible { border-color: var(--accent); background: rgba(245,158,11,0.05); outline: none; }
+    .drop-zone.loaded { border-color: var(--green); border-style: solid; }
+    .drop-zone.error { border-color: var(--red); border-style: solid; }
+    .drop-zone input { display: none; }
+    .drop-icon { font-size: 2rem; margin-bottom: 6px; }
+    .drop-label { font-weight: 500; }
+    .drop-hint { font-size: 0.8rem; color: var(--muted); }
+    .progress { height: 6px; background: var(--border); border-radius: 3px; margin-top: 14px; overflow: hidden; display: none; }
+    .progress > div { height: 100%; width: 0; background: var(--accent); transition: width .1s; }
+    .status { margin-top: 10px; font-size: 0.85rem; }
+    .status.error { color: var(--red); }
+
+    .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 16px; }
+    .fact.wide { grid-column: span 2; }
+    .fact { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
+    .fact .k { font-size: 0.75rem; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+    .fact .v { font-size: 1rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+    .notes { margin: 0 0 14px 0; padding-left: 20px; }
+    .notes li { color: var(--accent); }
+
+    .table-wrap { overflow-x: auto; margin-bottom: 16px; }
+    table { border-collapse: collapse; width: 100%; font-size: 0.82rem; font-variant-numeric: tabular-nums; }
+    th, td { padding: 5px 8px; text-align: right; border-bottom: 1px solid var(--border); white-space: nowrap; }
+    th { color: var(--muted); font-weight: 500; position: sticky; top: 0; background: var(--surface); }
+    th:first-child, td:first-child { text-align: left; }
+    td.dim { color: var(--muted); }
+
+    .controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; }
+    .field { display: flex; flex-direction: column; gap: 4px; }
+    .field label { font-size: 0.78rem; color: var(--muted); }
+    .field input { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 7px 10px; color: var(--text); font-size: 0.9rem; color-scheme: dark; }
+    .field input:focus { outline: none; border-color: var(--accent); }
+    button {
+      background: var(--accent); color: #000; border: 0; border-radius: 6px; padding: 9px 18px;
+      font-weight: 600; font-size: 0.92rem; cursor: pointer;
+    }
+    button:disabled { opacity: .4; cursor: default; }
+    button:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+    .next { margin-top: 14px; }
+    footer { margin-top: 28px; font-size: 0.8rem; color: var(--muted); }
+  </style>
+</head>
+<body>
+  <h1>SolarAssistant → energiflow</h1>
+  <p class="subtitle">Lav en energiflow-CSV ud fra en SolarAssistant-backup: time for time sol, forbrug, batteri og net. Filen kan læses ind i <a href="https://marurup.github.io/solarProductionAnalyzer/">solarProductionAnalyzer</a>, som så viser hvad sol og batteri sparer.</p>
+
+  <div class="card">
+    <h2>1. Hent en backup fra SolarAssistant</h2>
+    <ol>
+      <li>Åbn SolarAssistant i browseren og gå til <b>Configuration</b>.</li>
+      <li>Rul ned til <b>System</b> og vælg <b>View detail</b>.</li>
+      <li>Vælg <b>Backup</b>, vent til backuppen er færdig, og download filen (en <code>.zip</code>).</li>
+    </ol>
+    <p>Se også SolarAssistants egen vejledning: <a href="https://solar-assistant.io/help/historic-data/backup">Historic data – Backup/Restore</a>. Backuppen kan være 100 MB eller mere — det er helt fint.</p>
+    <p class="privacy">Filen læses kun i din browser. Intet bliver sendt nogen steder hen.</p>
+  </div>
+
+  <div class="card">
+    <h2>2. Vælg backup-filen</h2>
+    <div class="drop-zone" id="drop" tabindex="0" role="button" aria-describedby="dropHint">
+      <input type="file" id="file" accept=".zip,.gz" multiple>
+      <div class="drop-icon" aria-hidden="true">🗂️</div>
+      <div class="drop-label">Træk backup-zip'en hertil, eller klik for at vælge</div>
+      <div class="drop-hint" id="dropHint">Har du pakket den ud, kan du i stedet vælge alle <code>*.tar.gz</code>-filerne</div>
+      <div class="progress" id="progress"><div></div></div>
+      <div class="status" id="status" aria-live="polite"></div>
+    </div>
+  </div>
+
+  <div class="card" id="result" hidden>
+    <h2>3. Kontrollér og download</h2>
+    <div class="facts" id="facts"></div>
+    <ul class="notes" id="notes"></ul>
+    <div class="table-wrap"><table id="months"></table></div>
+    <div class="controls">
+      <div class="field"><label for="from">Fra (dato)</label><input type="date" id="from"></div>
+      <div class="field"><label for="to">Til og med</label><input type="date" id="to"></div>
+      <div class="field"><label for="site">Navn på anlæg (valgfrit)</label><input type="text" id="site" placeholder="fx Hjemme" maxlength="60"></div>
+      <button id="download">Download energiflow-CSV</button>
+    </div>
+    <p class="next">Læs filen ind under <b>Inverter-data</b> i trin 1 i <a href="https://marurup.github.io/solarProductionAnalyzer/">solarProductionAnalyzer</a>. Har du også eloverblik-data for samme periode, bruges elmålerens tal til net-import og -eksport.</p>
+  </div>
+
+  <footer>
+    Formatet er beskrevet i <a href="https://github.com/marurup/solarProductionAnalyzer/blob/main/docs/energiflow-format.md">energiflow-CSV v1</a>.
+    Kildekode: <a href="https://github.com/marurup/solarProductionAnalyzer-exporter-solarAssistant">solarProductionAnalyzer-exporter-solarAssistant</a> · v<span id="ver"></span>
+  </footer>
+
+  <script type="module">
+    import { readBackup, toEnergiflowCSV, dkDate, HOURLY_FIELDS, VERSION } from './src/solarassistant.mjs';
+
+    const $ = id => document.getElementById(id);
+    const drop = $('drop'), input = $('file'), status = $('status'), bar = $('progress');
+    $('ver').textContent = VERSION;
+    let backup = null;
+
+    const nf1 = new Intl.NumberFormat('da-DK', { maximumFractionDigits: 1, minimumFractionDigits: 1 });
+    const nf0 = new Intl.NumberFormat('da-DK', { maximumFractionDigits: 0 });
+    const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+    drop.addEventListener('click', () => input.click());
+    drop.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); input.click(); } });
+    drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('drag-over'); });
+    drop.addEventListener('dragleave', () => drop.classList.remove('drag-over'));
+    drop.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('drag-over'); load([...e.dataTransfer.files]); });
+    input.addEventListener('change', () => load([...input.files]));
+
+    async function load(files) {
+      if (!files.length) return;
+      drop.classList.remove('loaded', 'error');
+      status.className = 'status';
+      status.textContent = 'Læser backup…';
+      bar.style.display = 'block'; bar.firstElementChild.style.width = '0';
+      $('result').hidden = true;
+      const t0 = performance.now();
+      try {
+        backup = await readBackup(files.map(f => ({ name: f.name, data: f })), {
+          onProgress: (d, n) => {
+            bar.firstElementChild.style.width = (100 * d / n) + '%';
+            status.textContent = `Læser shard ${d} af ${n}…`;
+          },
+        });
+        const secs = ((performance.now() - t0) / 1000).toFixed(1);
+        status.textContent = `✓ ${files.length === 1 ? files[0].name : files.length + ' filer'} læst på ${secs} s`;
+        drop.classList.add('loaded');
+        render();
+      } catch (err) {
+        console.error(err);
+        backup = null;
+        status.className = 'status error';
+        status.textContent = '✗ ' + (err.message || err);
+        drop.classList.add('error');
+      } finally {
+        bar.style.display = 'none';
+      }
+    }
+
+    function render() {
+      const i = backup.info;
+      const firstD = dkDate(i.first), lastD = dkDate(i.last);
+      const fact = (k, v, wide) => `<div class="fact${wide ? ' wide' : ''}"><div class="k">${k}</div><div class="v">${v}</div></div>`;
+      const cols = HOURLY_FIELDS.filter(f => i.found[f.key]).map(f => f.col.replace(/_kwh$/, ''));
+      if (i.found.soc) cols.push('battery_soc');
+      $('facts').innerHTML =
+        fact('Periode', `${firstD} – ${lastD}`, true) +
+        fact('Timer', nf0.format(i.hourCount)) +
+        fact('Manglende timer', nf0.format(i.gapHours)) +
+        fact('Shards', nf0.format(i.shards));
+      const notes = [];
+      const missing = HOURLY_FIELDS.filter(f => !i.found[f.key]).map(f => f.col);
+      if (missing.length) notes.push(`Ikke fundet i backuppen: ${missing.join(', ')}. Kolonnerne udelades.`);
+      if (i.missingBattery) notes.push(`${nf0.format(i.missingBattery)} timer har ingen batteridata. Batteri-cellerne er tomme der (betyder "ukendt").`);
+      if (i.droppedPartial) notes.push('Den sidste, ufuldstændige time (backup-tidspunktet) er udeladt.');
+      notes.push(...i.notes);
+      notes.push(`Kolonner: ${cols.join(', ')}`);
+      $('notes').innerHTML = notes.map(n => `<li>${esc(n)}</li>`).join('');
+      $('notes').lastElementChild.style.color = 'var(--muted)';
+
+      // Monthly kWh totals as a sanity check against SolarAssistant's own "Totals" page.
+      const fields = HOURLY_FIELDS.filter(f => i.found[f.key]);
+      const months = new Map();
+      for (const t of backup.keys) {
+        const m = dkDate(t).slice(0, 7);
+        let b = months.get(m); if (!b) months.set(m, b = { hours: 0 });
+        b.hours++;
+        const r = backup.hours.get(t);
+        for (const f of fields) if (r[f.key] !== undefined) b[f.key] = (b[f.key] || 0) + r[f.key];
+      }
+      const head = { pv: 'Sol', load: 'Forbrug', batIn: 'Bat. ind', batOut: 'Bat. ud', gridIn: 'Net ind', gridOut: 'Net ud' };
+      $('months').innerHTML =
+        `<caption style="text-align:left;color:var(--muted);font-size:.8rem;padding-bottom:6px">kWh pr. måned — sammenlign gerne med SolarAssistants side "Totals"</caption>` +
+        `<thead><tr><th>Måned</th><th>Timer</th>${fields.map(f => `<th>${head[f.key]}</th>`).join('')}</tr></thead><tbody>` +
+        [...months].map(([m, b]) => `<tr><td>${m}</td><td class="dim">${b.hours}</td>${fields.map(f => `<td>${b[f.key] === undefined ? '–' : nf1.format(b[f.key])}</td>`).join('')}</tr>`).join('') +
+        '</tbody>';
+
+      for (const id of ['from', 'to']) { $(id).min = firstD; $(id).max = lastD; }
+      $('from').value = firstD; $('to').value = lastD;
+      $('result').hidden = false;
+    }
+
+    $('download').addEventListener('click', () => {
+      if (!backup) return;
+      const from = $('from').value || undefined, to = $('to').value || undefined;
+      if (from && to && from > to) { alertInline('"Fra" ligger efter "Til".'); return; }
+      const { csv, rows } = toEnergiflowCSV(backup, { from, to, site: $('site').value });
+      if (!rows) { alertInline('Ingen timer i den valgte periode.'); return; }
+      const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+      const a = Object.assign(document.createElement('a'), { href: url, download: `energiflow-solarassistant-${from || ''}_${to || ''}.csv` });
+      document.body.append(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+      status.className = 'status';
+      status.textContent = `✓ ${nf0.format(rows)} timer gemt som CSV`;
+    });
+
+    function alertInline(msg) { status.className = 'status error'; status.textContent = '✗ ' + msg; }
+  </script>
+</body>
+</html>

@@ -1,0 +1,7 @@
+# Backups og eksporterede data er private — commit dem aldrig
+*.zip
+*.tar.gz
+*.tsm
+*.csv
+test-data/
+node_modules/
